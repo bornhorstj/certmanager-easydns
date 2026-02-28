@@ -52,6 +52,32 @@ Automatically issue and renew TLS certificates (including wildcards) using
 
 ---
 
+## Home Lab Integration
+
+If you're building a Proxmox-based home lab cluster, this webhook is already
+integrated into the [Proxmox_K8s_Build](https://github.com/bornhorstj/Proxmox_K8s_build)
+repo. That repo's `ansible/03-tls.yml` playbook deploys nginx-ingress,
+cert-manager, and this webhook together in one run — pointing directly at this
+repo's local Helm chart.
+
+```bash
+# Clone this repo alongside Proxmox_K8s_build (expected path)
+git clone git@github.com:bornhorstj/certmanager-easydns.git ~/certmanager-easydns
+
+# Build and push your webhook image first
+docker build -t your-registry/cert-manager-webhook-easydns:latest ~/certmanager-easydns
+docker push your-registry/cert-manager-webhook-easydns:latest
+
+# Then run the TLS playbook from Proxmox_K8s_build
+cd ~/Proxmox_K8s_build/ansible
+ansible-playbook -i inventory.ini 03-tls.yml -e @secrets.yml
+```
+
+For standalone deployments (without the Proxmox stack), continue with the
+Ansible or manual deployment guides below.
+
+---
+
 ## Project Structure
 
 ```
