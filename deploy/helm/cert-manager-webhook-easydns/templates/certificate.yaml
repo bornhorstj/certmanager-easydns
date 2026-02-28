@@ -1,0 +1,95 @@
+{{/*
+  certificate.yaml — TLS certificate for the webhook server itself.
+
+  WHY THIS EXISTS:
+  cert-manager's controller communicates with our webhook over HTTPS.
+  This means our webhook needs its own TLS certificate. We use cert-manager
+  itself (via a self-signed CA) to issue this certificate automatically.
+
+  It's cert-manager issuing a cert for cert-manager's own webhook —
+  a bit circular, but it's the standard pattern for all cert-manager webhooks.
+
+  You don't need to manage or renew this certificate manually.
+  cert-manager handles it automatically.
+*/}}
+
+# ── Self-Signed Issuer ────────────────────────────────────────────────────────
+# Creates a local "certificate authority" that only lives inside this namespace.
+# Used only to sign the webhook's own TLS certificate (not user certs).
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: {{ include "cert-manager-webhook-easydns.fullname" . }}-selfsign
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "cert-manager-webhook-easydns.labels" . | nindent 4 }}
+spec:
+  selfSigned: {}  # This issuer just self-signs — no external CA needed here
+
+---
+# ── CA Certificate ────────────────────────────────────────────────────────────
+# A self-signed "root" certificate for our webhook's internal CA.
+# Kubernetes uses this to verify the webhook's TLS certificate.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "cert-manager-webhook-easydns.fullname" . }}-ca
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "cert-manager-webhook-easydns.labels" . | nindent 4 }}
+spec:
+  # isCA: true means this is a Certificate Authority (can sign other certs)
+  isCA: true
+  commonName: {{ include "cert-manager-webhook-easydns.fullname" . }}-ca
+  secretName: {{ include "cert-manager-webhook-easydns.fullname" . }}-ca
+  # 10 year validity — this CA cert rarely needs rotation
+  duration: 87600h
+  renewBefore: 720h  # Start renewal 30 days before expiry
+  issuerRef:
+    name: {{ include "cert-manager-webhook-easydns.fullname" . }}-selfsign
+    kind: Issuer
+
+---
+# ── CA Issuer ─────────────────────────────────────────────────────────────────
+# Now we use the CA cert above to issue the actual webhook TLS cert below.
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: {{ include "cert-manager-webhook-easydns.fullname" . }}-ca
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "cert-manager-webhook-easydns.labels" . | nindent 4 }}
+spec:
+  ca:
+    secretName: {{ include "cert-manager-webhook-easydns.fullname" . }}-ca
+
+---
+# ── Webhook TLS Certificate ───────────────────────────────────────────────────
+# The actual TLS certificate that our webhook server presents.
+# This is what cert-manager's controller validates when it calls our webhook.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "cert-manager-webhook-easydns.fullname" . }}-tls
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "cert-manager-webhook-easydns.labels" . | nindent 4 }}
+spec:
+  # The certificate is stored in this Kubernetes Secret
+  # (referenced in deployment.yaml to mount into the pod)
+  secretName: {{ include "cert-manager-webhook-easydns.fullname" . }}-tls
+
+  # 1 year validity — auto-renewed by cert-manager
+  duration: 8760h
+  renewBefore: 360h  # Renew 15 days before expiry
+
+  # The webhook is reached at this internal DNS name inside the cluster
+  dnsNames:
+    - {{ include "cert-manager-webhook-easydns.fullname" . }}
+    - {{ include "cert-manager-webhook-easydns.fullname" . }}.{{ .Release.Namespace }}
+    - {{ include "cert-manager-webhook-easydns.fullname" . }}.{{ .Release.Namespace }}.svc
+    - {{ include "cert-manager-webhook-easydns.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local
+
+  issuerRef:
+    name: {{ include "cert-manager-webhook-easydns.fullname" . }}-ca
+    kind: Issuer

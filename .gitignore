@@ -1,0 +1,8 @@
+# Windows download metadata
+*.Zone.Identifier
+
+# Build output
+webhook
+
+# Go test cache
+*.test

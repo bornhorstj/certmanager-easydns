@@ -1,0 +1,131 @@
+# =============================================================================
+# FILE: 02-clusterissuer.yaml
+# PURPOSE: Tells cert-manager HOW to issue certificates.
+#
+# A ClusterIssuer is a cluster-wide resource that defines:
+#   - Which ACME server to use (Let's Encrypt staging or production)
+#   - How to prove domain ownership (DNS-01 via easyDNS webhook)
+#
+# ⚠️  IMPORTANT: Always test with STAGING first!
+#   - Staging:    No rate limits, but issues UNTRUSTED certs (for testing)
+#   - Production: Rate limited, issues TRUSTED certs (for real use)
+#
+# HOW TO APPLY:
+#   kubectl apply -f 02-clusterissuer.yaml
+#
+# HOW TO CHECK STATUS:
+#   kubectl describe clusterissuer letsencrypt-staging-easydns
+#   kubectl describe clusterissuer letsencrypt-prod-easydns
+#   Look for "Status: True" and "Type: Ready"
+# =============================================================================
+
+
+# ── STAGING Issuer (Start Here for Testing) ──────────────────────────────────
+# Use this first! Staging Let's Encrypt has no rate limits.
+# Certs from staging are NOT trusted by browsers, but the DNS verification
+# process is identical to production — perfect for testing your setup.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-staging-easydns
+  # ClusterIssuers have no namespace — they work across the whole cluster.
+spec:
+  acme:
+    # ── Your email address ───────────────────────────────────────────────────
+    # Let's Encrypt sends expiry notifications here.
+    # REQUIRED: Replace with your real email address.
+    email: admin@yourdomain.com
+
+    # ── ACME Server URL ──────────────────────────────────────────────────────
+    # Staging server — use this for testing (no rate limits)
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
+    # Production server (commented out) — uncomment when ready
+    # server: https://acme-v02.api.letsencrypt.org/directory
+
+    # ── Account Private Key ──────────────────────────────────────────────────
+    # cert-manager auto-creates this Kubernetes Secret on first run.
+    # It's your identity with Let's Encrypt — don't delete it.
+    privateKeySecretRef:
+      name: letsencrypt-staging-easydns-account-key
+
+    # ── Challenge Solver ─────────────────────────────────────────────────────
+    # Tells cert-manager HOW to prove you own the domain.
+    # We use DNS-01 via the easyDNS webhook.
+    solvers:
+      - dns01:
+          # cnameStrategy: Follow means cert-manager will follow CNAME records.
+          # Useful if you delegate _acme-challenge to a different zone.
+          cnameStrategy: Follow
+
+          webhook:
+            # These MUST match the groupName and solverName in values.yaml
+            # and in the webhook's compiled Go code.
+            groupName: acme.easydns.com
+            solverName: easydns
+
+            # These values are passed directly to our Go webhook's loadConfig().
+            # They tell the webhook where the easyDNS API is and where to find
+            # the API credentials in Kubernetes Secrets.
+            config:
+              # easyDNS REST API base URL
+              # Sandbox (for testing):    https://sandbox.rest.easydns.net:3001
+              # Production (for real use): https://rest.easydns.net
+              apiEndpoint: "https://sandbox.rest.easydns.net:3001"  # ← Switch to production when ready
+
+              # Reference to the Kubernetes Secret containing the API token.
+              # "name" = name of the Secret, "key" = which key inside the Secret.
+              apiTokenSecretRef:
+                name: easydns-credentials   # Name of the Secret from 01-secret.yaml
+                key: api-token              # Key inside that Secret
+                namespace: cert-manager     # Namespace where the Secret lives
+
+              # Reference to the Kubernetes Secret containing the API key.
+              apiKeySecretRef:
+                name: easydns-credentials   # Same Secret, different key
+                key: api-key
+                namespace: cert-manager
+
+              # How long (seconds) the temporary TXT record lives in DNS.
+              # 300 = 5 minutes. Short enough to clean up quickly.
+              ttl: 300
+
+
+---
+# ── PRODUCTION Issuer (Use After Staging Works) ───────────────────────────────
+# Only deploy this after you've confirmed staging works end-to-end.
+# Production Let's Encrypt has rate limits — too many failures lock you out.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod-easydns
+spec:
+  acme:
+    email: admin@yourdomain.com  # ← REQUIRED: Replace with your real email
+
+    # Production ACME server — issues real, browser-trusted certificates
+    server: https://acme-v02.api.letsencrypt.org/directory
+
+    privateKeySecretRef:
+      name: letsencrypt-prod-easydns-account-key  # Different secret from staging
+
+    solvers:
+      - dns01:
+          cnameStrategy: Follow
+          webhook:
+            groupName: acme.easydns.com
+            solverName: easydns
+            config:
+              # Production easyDNS API (no sandbox)
+              apiEndpoint: "https://rest.easydns.net"
+
+              apiTokenSecretRef:
+                name: easydns-credentials
+                key: api-token
+                namespace: cert-manager
+
+              apiKeySecretRef:
+                name: easydns-credentials
+                key: api-key
+                namespace: cert-manager
+
+              ttl: 300

@@ -1,0 +1,57 @@
+# =============================================================================
+# Helm Chart Values for cert-manager easyDNS Webhook
+# =============================================================================
+#
+# This is the MAIN FILE YOU EDIT when deploying. Everything below has
+# sensible defaults, but you must fill in the items marked "REQUIRED".
+#
+# After editing, deploy with:
+#   helm install cert-manager-webhook-easydns ./deploy/helm/cert-manager-webhook-easydns \
+#     --namespace cert-manager \
+#     --values values.yaml
+# =============================================================================
+
+
+# ── Webhook Identity ──────────────────────────────────────────────────────────
+# These two values MUST match exactly what you put in your ClusterIssuer YAML.
+# They're how cert-manager knows which webhook to call.
+groupName: acme.easydns.com   # A unique namespace for this webhook (looks like a domain)
+solverName: easydns           # Short name referenced in the ClusterIssuer solver config
+
+
+# ── Container Image ───────────────────────────────────────────────────────────
+# Where to pull the webhook container image from.
+image:
+  repository: your-registry/cert-manager-webhook-easydns  # REQUIRED: Update to your image registry
+  tag: latest                                               # Pin to a specific version in production (e.g., "1.0.0")
+  pullPolicy: IfNotPresent                                  # Only pull if not already cached locally
+
+
+# ── Kubernetes Resources ──────────────────────────────────────────────────────
+# How many webhook pods to run. 1 is fine for most setups.
+# Increase to 2+ for high availability in production.
+replicaCount: 1
+
+# Resource limits prevent the webhook from consuming too much cluster memory/CPU.
+# These are conservative defaults — adjust if you see OOM kills.
+resources:
+  requests:
+    memory: "64Mi"   # Minimum memory to reserve
+    cpu: "10m"       # Minimum CPU (10 millicores = 0.01 CPU cores)
+  limits:
+    memory: "128Mi"  # Maximum memory allowed
+    cpu: "100m"      # Maximum CPU (100 millicores = 0.1 CPU cores)
+
+
+# ── TLS Certificate for the Webhook Server ───────────────────────────────────
+# cert-manager's controller communicates with our webhook over HTTPS.
+# cert-manager will automatically generate and inject the TLS cert here.
+# You do NOT need to change this section.
+certManager:
+  namespace: cert-manager           # Namespace where cert-manager is installed
+  serviceAccountName: cert-manager  # cert-manager's service account name
+
+
+# ── cert-manager Version Compatibility ───────────────────────────────────────
+# Leave this as-is unless you're on a very old version of cert-manager.
+certManagerApiVersion: cert-manager.io/v1

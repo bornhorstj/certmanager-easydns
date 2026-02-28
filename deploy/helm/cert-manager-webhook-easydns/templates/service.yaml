@@ -1,0 +1,62 @@
+{{/*
+  service.yaml — Exposes the webhook pod within the cluster.
+
+  HOW IT WORKS:
+  - The "Service" creates a stable internal DNS name and IP for our webhook pod.
+    Even if the pod restarts with a new IP, the Service IP stays the same.
+  - The "APIService" tells Kubernetes that our webhook handles API calls for
+    the "acme.cert-manager.io" group. This is how cert-manager finds and
+    calls our webhook.
+
+  You don't normally need to change anything in this file.
+*/}}
+
+# ── Service ───────────────────────────────────────────────────────────────────
+# Provides a stable network endpoint to reach the webhook pod.
+# cert-manager routes challenge solve/cleanup calls through this Service.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "cert-manager-webhook-easydns.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "cert-manager-webhook-easydns.labels" . | nindent 4 }}
+spec:
+  # ClusterIP means the service is only reachable inside the cluster.
+  # Perfect for a webhook — it should never be exposed to the internet.
+  type: ClusterIP
+  ports:
+    - name: https
+      port: 443         # The port clients (cert-manager) connect to
+      targetPort: 443   # The port our webhook pod listens on
+      protocol: TCP
+  selector:
+    # Routes traffic to pods that match these labels (our webhook pods)
+    {{- include "cert-manager-webhook-easydns.selectorLabels" . | nindent 4 }}
+
+---
+# ── APIService ────────────────────────────────────────────────────────────────
+# Registers our webhook with the Kubernetes API aggregation layer.
+# This tells Kubernetes: "For API group acme.cert-manager.io, call our service."
+# cert-manager uses this when it needs to solve/clean up DNS challenges.
+apiVersion: apiregistration.k8s.io/v1
+kind: APIService
+metadata:
+  name: v1alpha1.{{ .Values.groupName }}
+  labels:
+    {{- include "cert-manager-webhook-easydns.labels" . | nindent 4 }}
+  annotations:
+    # This annotation tells cert-manager to inject the correct CA bundle
+    # so Kubernetes can verify our webhook's TLS certificate.
+    cert-manager.io/inject-ca-from: "{{ .Release.Namespace }}/{{ include "cert-manager-webhook-easydns.fullname" . }}-tls"
+spec:
+  group: {{ .Values.groupName }}
+  groupPriorityMinimum: 1000
+  versionPriority: 15
+  service:
+    name: {{ include "cert-manager-webhook-easydns.fullname" . }}
+    namespace: {{ .Release.Namespace }}
+    port: 443
+  version: v1alpha1
+  # insecureSkipTLSVerify is intentionally false — we want proper TLS verification.
+  insecureSkipTLSVerify: false

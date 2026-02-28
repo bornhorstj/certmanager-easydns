@@ -1,0 +1,107 @@
+# =============================================================================
+# FILE: 03-certificate.yaml
+# PURPOSE: Requests an actual TLS certificate from Let's Encrypt.
+#
+# A Certificate resource tells cert-manager:
+#   - Which domain(s) to get a cert for
+#   - Which ClusterIssuer to use
+#   - Where to store the resulting cert (in a Kubernetes Secret)
+#
+# WHAT HAPPENS WHEN YOU APPLY THIS:
+#   1. cert-manager sees the Certificate resource
+#   2. It contacts Let's Encrypt and starts an ACME order
+#   3. Let's Encrypt issues a DNS-01 challenge
+#   4. cert-manager calls our easyDNS webhook → webhook creates TXT record in easyDNS
+#   5. Let's Encrypt verifies the TXT record exists
+#   6. Let's Encrypt issues the certificate
+#   7. cert-manager stores the cert+key in the secretName Secret
+#   8. Our webhook cleans up the temporary TXT record
+#
+# HOW TO APPLY:
+#   kubectl apply -f 03-certificate.yaml
+#
+# HOW TO CHECK STATUS:
+#   kubectl describe certificate yourdomain-tls -n default
+#   kubectl get secret yourdomain-tls-secret -n default   (appears when ready)
+#
+# HOW TO DEBUG IF IT'S NOT WORKING:
+#   kubectl get challenges -A          (see active ACME challenges)
+#   kubectl get orders -A              (see certificate orders)
+#   kubectl describe order <name> -n default
+# =============================================================================
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  # A name for this certificate resource (used in kubectl commands)
+  name: yourdomain-tls
+
+  # The namespace where your application/ingress lives.
+  # The TLS Secret will be created here.
+  namespace: default
+
+spec:
+  # ── Output Secret ──────────────────────────────────────────────────────────
+  # After the cert is issued, cert-manager stores it in this Kubernetes Secret.
+  # Your Ingress or application references this secret to use the cert.
+  # The secret will contain:
+  #   tls.crt = the certificate (and chain)
+  #   tls.key = the private key
+  secretName: yourdomain-tls-secret
+
+  # ── Domain Names ──────────────────────────────────────────────────────────
+  # The domain(s) this certificate covers.
+  # DNS-01 (which we're using) supports wildcards! HTTP-01 does not.
+  #
+  # REQUIRED: Replace with your actual domain names.
+  commonName: yourdomain.com
+  dnsNames:
+    - yourdomain.com           # Covers the apex domain
+    - "*.yourdomain.com"       # Wildcard: covers any.yourdomain.com
+    # Add more domains if needed:
+    # - api.yourdomain.com
+    # - app.yourdomain.com
+
+  # ── Renewal ────────────────────────────────────────────────────────────────
+  # cert-manager automatically renews certificates before they expire.
+  # Let's Encrypt certs are valid for 90 days.
+  # We start renewal 15 days before expiry (360 hours = 15 days).
+  renewBefore: 360h
+
+  # ── Which Issuer to Use ────────────────────────────────────────────────────
+  # References the ClusterIssuer defined in 02-clusterissuer.yaml.
+  # Start with staging, then switch to prod once verified.
+  issuerRef:
+    # For testing (staging):
+    name: letsencrypt-staging-easydns
+    # For production (switch when staging works):
+    # name: letsencrypt-prod-easydns
+    kind: ClusterIssuer  # ClusterIssuer works across all namespaces
+
+
+# =============================================================================
+# EXAMPLE: Using the certificate in an Nginx Ingress
+# =============================================================================
+# After the Certificate is Ready, reference it in your Ingress like this:
+#
+# apiVersion: networking.k8s.io/v1
+# kind: Ingress
+# metadata:
+#   name: my-app-ingress
+#   namespace: default
+# spec:
+#   tls:
+#     - hosts:
+#         - yourdomain.com
+#       secretName: yourdomain-tls-secret   # ← Same name as secretName above
+#   rules:
+#     - host: yourdomain.com
+#       http:
+#         paths:
+#           - path: /
+#             pathType: Prefix
+#             backend:
+#               service:
+#                 name: my-app-service
+#                 port:
+#                   number: 80
+# =============================================================================

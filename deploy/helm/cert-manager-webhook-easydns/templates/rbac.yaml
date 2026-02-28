@@ -1,0 +1,97 @@
+{{/*
+  rbac.yaml — Kubernetes permissions for the easyDNS webhook.
+
+  RBAC (Role-Based Access Control) controls what our webhook is allowed to do
+  in the Kubernetes cluster. Our webhook needs very limited permissions:
+
+  1. ServiceAccount: An "identity" for our webhook pod (like a user account for pods)
+  2. ClusterRole: Defines WHAT the webhook is allowed to do
+  3. ClusterRoleBinding: Grants the ClusterRole to our ServiceAccount
+
+  Security note: We request only the minimum permissions needed.
+  The webhook only needs to read Secrets (to get easyDNS API credentials)
+  and interact with cert-manager's webhook framework resources.
+*/}}
+
+# ── ServiceAccount ────────────────────────────────────────────────────────────
+# This is the "identity" that our webhook pod runs as.
+# It's like a Linux user account, but for Kubernetes pods.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "cert-manager-webhook-easydns.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "cert-manager-webhook-easydns.labels" . | nindent 4 }}
+
+---
+# ── ClusterRole: Read Secrets ─────────────────────────────────────────────────
+# Our webhook needs to read the Kubernetes Secret that stores the easyDNS
+# API token and key. This grants that specific permission cluster-wide.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "cert-manager-webhook-easydns.fullname" . }}:secret-reader
+  labels:
+    {{- include "cert-manager-webhook-easydns.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    # "get" lets us read a specific secret by name.
+    # We intentionally do NOT grant "list" or "watch" to limit exposure.
+    verbs: ["get"]
+
+---
+# ── ClusterRoleBinding: Give the ServiceAccount permission to read Secrets ────
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "cert-manager-webhook-easydns.fullname" . }}:secret-reader
+  labels:
+    {{- include "cert-manager-webhook-easydns.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "cert-manager-webhook-easydns.fullname" . }}:secret-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: {{ include "cert-manager-webhook-easydns.fullname" . }}
+    namespace: {{ .Release.Namespace }}
+
+---
+# ── ClusterRole: cert-manager webhook framework permissions ──────────────────
+# cert-manager's webhook framework needs to verify our webhook's identity.
+# This grants the permissions required by the webhook SDK.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "cert-manager-webhook-easydns.fullname" . }}:domain-solver
+  labels:
+    {{- include "cert-manager-webhook-easydns.labels" . | nindent 4 }}
+rules:
+  - apiGroups:
+      - acme.cert-manager.io
+    resources:
+      - "*"
+    verbs:
+      - "create"
+
+---
+# ── ClusterRoleBinding: Allow cert-manager to call our webhook ────────────────
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "cert-manager-webhook-easydns.fullname" . }}:domain-solver
+  labels:
+    {{- include "cert-manager-webhook-easydns.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "cert-manager-webhook-easydns.fullname" . }}:domain-solver
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    # cert-manager's own service account — this is who calls our webhook
+    name: {{ .Values.certManager.serviceAccountName }}
+    namespace: {{ .Values.certManager.namespace }}
