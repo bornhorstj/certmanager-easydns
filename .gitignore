@@ -6,3 +6,12 @@ webhook
 
 # Go test cache
 *.test
+
+# User-specific kubernetes configs — copy from .example files and fill in your values
+kubernetes/01-secret.yaml
+kubernetes/02-clusterissuer.yaml
+kubernetes/03-certificate.yaml
+
+# Ansible — secrets and kubeconfig are never committed
+ansible/secrets.yml
+ansible/kubeconfig

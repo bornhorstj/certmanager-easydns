@@ -9,14 +9,14 @@ Automatically issue and renew TLS certificates (including wildcards) using
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                     Your Kubernetes Cluster                      │
-│                                                                  │
-│  cert-manager                                                    │
+│                     Your Kubernetes Cluster                     │
+│                                                                 │
+│  cert-manager                                                   │
 │  ┌─────────────┐   "Prove you own        ┌──────────────────┐   │
-│  │ Certificate │   yourdomain.com"       │  easyDNS Webhook  │   │
-│  │  Resource   │ ──────────────────────► │  (this project)   │   │
+│  │ Certificate │   yourdomain.com"       │  easyDNS Webhook │   │
+│  │  Resource   │ ──────────────────────► │  (this project)  │   │
 │  └─────────────┘                         └────────┬─────────┘   │
-│                                                   │              │
+│                                                   │             │
 └───────────────────────────────────────────────────┼─────────────┘
                                                     │ PUT /zones/records/add
                                                     ▼
@@ -28,7 +28,7 @@ Automatically issue and renew TLS certificates (including wildcards) using
                               Let's Encrypt reads ◄─┘
                               _acme-challenge TXT
                               record, then issues
-                              your certificate ✅
+                              your certificate
 ```
 
 **Plain English:**
@@ -61,22 +61,70 @@ cert-manager-webhook-easydns/
 ├── go.mod                           # Go dependencies
 ├── Dockerfile                       # Builds the webhook container image
 │
-├── kubernetes/                      # Plain YAML files (no Helm required)
-│   ├── 01-secret.yaml               # Your easyDNS API credentials
-│   ├── 02-clusterissuer.yaml        # How cert-manager gets certs (staging + prod)
-│   └── 03-certificate.yaml         # Request an actual TLS cert for your domain
+├── ansible/                         # Ansible deployment (recommended)
+│   ├── deploy.yml                   # Main playbook — runs everything end-to-end
+│   ├── secrets.yml.example          # Copy to secrets.yml and fill in your values
+│   ├── group_vars/
+│   │   └── all.yml                  # Non-secret defaults (namespaces, etc.)
+│   └── kubeconfig                   # gitignored — symlink/copy your kubeconfig here
 │
-└── deploy/helm/                     # Helm chart (deploys the webhook itself)
+├── kubernetes/                      # Reference YAML files (manual deployment)
+│   ├── 01-secret.yaml.example       # easyDNS API credentials template
+│   ├── 02-clusterissuer.yaml.example  # ClusterIssuer template
+│   └── 03-certificate.yaml.example  # Certificate template
+│
+└── deploy/helm/                     # Helm chart (deploys the webhook pod)
     └── cert-manager-webhook-easydns/
         ├── Chart.yaml
-        ├── values.yaml              # ← Edit this before deploying
+        ├── values.yaml
         └── templates/
-            ├── deployment.yaml      # Runs the webhook pod
-            ├── service.yaml         # Exposes the webhook inside the cluster
-            ├── certificate.yaml     # TLS cert for the webhook server itself
-            ├── rbac.yaml            # Kubernetes permissions
-            └── _helpers.tpl         # Shared template snippets
+            ├── deployment.yaml
+            ├── service.yaml
+            ├── certificate.yaml
+            ├── rbac.yaml
+            └── _helpers.tpl
 ```
+
+---
+
+## Ansible Deployment (Recommended)
+
+The Ansible playbook handles everything end-to-end: cert-manager, the webhook, credentials, ClusterIssuers, and a Certificate — all driven by variables with no manual file editing.
+
+### 1 — Build and push the webhook image
+
+```bash
+docker build -t your-registry/cert-manager-webhook-easydns:latest .
+docker push your-registry/cert-manager-webhook-easydns:latest
+```
+
+### 2 — Set up your secrets file
+
+```bash
+cp ansible/secrets.yml.example ansible/secrets.yml
+# Edit ansible/secrets.yml — fill in all values
+```
+
+### 3 — Add your kubeconfig
+
+```bash
+cp ~/.kube/config ansible/kubeconfig
+# or: ln -s ~/.kube/config ansible/kubeconfig
+```
+
+### 4 — Run the playbook
+
+```bash
+ansible-playbook -i localhost, ansible/deploy.yml -e @ansible/secrets.yml
+```
+
+That's it. The playbook deploys cert-manager, the webhook, creates the credentials secret, and applies staging + production ClusterIssuers. It finishes by printing ClusterIssuer status.
+
+> **Note:** The Certificate is deployed pointing at the staging issuer by default. Once staging shows `Ready: True`, edit `ansible/deploy.yml` and change `letsencrypt-staging-easydns` to `letsencrypt-prod-easydns`, then re-run the playbook.
+
+---
+
+## Manual Deployment (Without Ansible)
 
 ---
 

@@ -1,0 +1,217 @@
+---
+# Deploy cert-manager + EasyDNS webhook + Let's Encrypt ClusterIssuers + Certificate
+#
+# Requires:
+#   - ansible/kubeconfig  (copy or symlink your cluster kubeconfig here)
+#   - ansible/secrets.yml (copy secrets.yml.example and fill in your values)
+#   - helm installed on your workstation
+#   - docker build + push already done (webhook image must exist in your registry)
+#
+# Usage:
+#   ansible-playbook -i localhost, deploy.yml -e @secrets.yml
+
+- name: Deploy cert-manager EasyDNS webhook
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  environment:
+    KUBECONFIG: "{{ playbook_dir }}/kubeconfig"
+
+  tasks:
+
+    # -----------------------------------------------------------------------
+    # cert-manager
+    # -----------------------------------------------------------------------
+
+    - name: Add jetstack Helm repo
+      ansible.builtin.command:
+        cmd: helm repo add jetstack https://charts.jetstack.io
+      changed_when: false
+      failed_when: false
+
+    - name: Update Helm repos
+      ansible.builtin.command:
+        cmd: helm repo update
+      changed_when: false
+
+    - name: Install cert-manager
+      ansible.builtin.command:
+        cmd: >-
+          helm upgrade --install cert-manager jetstack/cert-manager
+          -n {{ cert_manager_namespace }} --create-namespace
+          --set crds.enabled=true
+      register: cm_result
+      changed_when: "'deployed' in cm_result.stdout"
+
+    - name: Wait for cert-manager to be ready
+      ansible.builtin.command:
+        cmd: >-
+          kubectl wait --for=condition=ready pod
+          -l app.kubernetes.io/instance=cert-manager
+          -n {{ cert_manager_namespace }} --timeout=120s
+      changed_when: false
+
+    # -----------------------------------------------------------------------
+    # EasyDNS webhook — deployed from local Helm chart
+    # -----------------------------------------------------------------------
+
+    - name: Deploy EasyDNS webhook from local chart
+      ansible.builtin.command:
+        cmd: >-
+          helm upgrade --install cert-manager-webhook-easydns
+          {{ playbook_dir }}/../deploy/helm/cert-manager-webhook-easydns
+          -n {{ cert_manager_namespace }}
+          --set image.repository={{ webhook_image_repository }}
+          --set image.tag={{ webhook_image_tag }}
+          --set groupName={{ webhook_group_name }}
+          --set solverName={{ webhook_solver_name }}
+      register: webhook_result
+      changed_when: "'deployed' in webhook_result.stdout"
+
+    - name: Wait for EasyDNS webhook to be ready
+      ansible.builtin.command:
+        cmd: >-
+          kubectl wait --for=condition=ready pod
+          -l app.kubernetes.io/name=cert-manager-webhook-easydns
+          -n {{ cert_manager_namespace }} --timeout=120s
+      changed_when: false
+
+    # -----------------------------------------------------------------------
+    # EasyDNS credentials secret
+    # easydns_api_token and easydns_api_key come from -e @secrets.yml
+    # -----------------------------------------------------------------------
+
+    - name: Create EasyDNS credentials secret (dry-run)
+      ansible.builtin.command:
+        cmd: >-
+          kubectl create secret generic easydns-credentials
+          -n {{ cert_manager_namespace }}
+          --from-literal=api-token={{ easydns_api_token }}
+          --from-literal=api-key={{ easydns_api_key }}
+          --dry-run=client -o yaml
+      register: easydns_secret_yaml
+      changed_when: false
+      no_log: true
+
+    - name: Apply EasyDNS credentials secret
+      ansible.builtin.shell:
+        cmd: "kubectl apply -f - <<'EOF'\n{{ easydns_secret_yaml.stdout }}\nEOF"
+      changed_when: true
+      no_log: true
+
+    # -----------------------------------------------------------------------
+    # Let's Encrypt ClusterIssuers (staging + production)
+    # Use staging first — no rate limits, confirms DNS-01 works end-to-end.
+    # -----------------------------------------------------------------------
+
+    - name: Write ClusterIssuer manifests
+      ansible.builtin.copy:
+        dest: /tmp/easydns-clusterissuers.yaml
+        mode: "0600"
+        content: |
+          apiVersion: cert-manager.io/v1
+          kind: ClusterIssuer
+          metadata:
+            name: letsencrypt-staging-easydns
+          spec:
+            acme:
+              server: https://acme-staging-v02.api.letsencrypt.org/directory
+              email: {{ letsencrypt_email }}
+              privateKeySecretRef:
+                name: letsencrypt-staging-easydns-account-key
+              solvers:
+              - dns01:
+                  cnameStrategy: Follow
+                  webhook:
+                    groupName: {{ webhook_group_name }}
+                    solverName: {{ webhook_solver_name }}
+                    config:
+                      apiEndpoint: "https://rest.easydns.net"
+                      apiTokenSecretRef:
+                        name: easydns-credentials
+                        key: api-token
+                        namespace: {{ cert_manager_namespace }}
+                      apiKeySecretRef:
+                        name: easydns-credentials
+                        key: api-key
+                        namespace: {{ cert_manager_namespace }}
+                      ttl: 300
+          ---
+          apiVersion: cert-manager.io/v1
+          kind: ClusterIssuer
+          metadata:
+            name: letsencrypt-prod-easydns
+          spec:
+            acme:
+              server: https://acme-v02.api.letsencrypt.org/directory
+              email: {{ letsencrypt_email }}
+              privateKeySecretRef:
+                name: letsencrypt-prod-easydns-account-key
+              solvers:
+              - dns01:
+                  cnameStrategy: Follow
+                  webhook:
+                    groupName: {{ webhook_group_name }}
+                    solverName: {{ webhook_solver_name }}
+                    config:
+                      apiEndpoint: "https://rest.easydns.net"
+                      apiTokenSecretRef:
+                        name: easydns-credentials
+                        key: api-token
+                        namespace: {{ cert_manager_namespace }}
+                      apiKeySecretRef:
+                        name: easydns-credentials
+                        key: api-key
+                        namespace: {{ cert_manager_namespace }}
+                      ttl: 300
+
+    - name: Apply ClusterIssuers
+      ansible.builtin.command:
+        cmd: kubectl apply -f /tmp/easydns-clusterissuers.yaml
+      changed_when: true
+
+    # -----------------------------------------------------------------------
+    # Certificate
+    # Requests a cert for cluster_domain + *.cluster_domain via staging issuer.
+    # Switch issuerRef to letsencrypt-prod-easydns once staging succeeds.
+    # -----------------------------------------------------------------------
+
+    - name: Write Certificate manifest
+      ansible.builtin.copy:
+        dest: /tmp/easydns-certificate.yaml
+        mode: "0600"
+        content: |
+          apiVersion: cert-manager.io/v1
+          kind: Certificate
+          metadata:
+            name: {{ cluster_domain | replace('.', '-') }}-tls
+            namespace: {{ cert_namespace }}
+          spec:
+            secretName: {{ cluster_domain | replace('.', '-') }}-tls-secret
+            commonName: {{ cluster_domain }}
+            dnsNames:
+              - {{ cluster_domain }}
+              - "*.{{ cluster_domain }}"
+            renewBefore: 360h
+            issuerRef:
+              name: letsencrypt-staging-easydns
+              kind: ClusterIssuer
+
+    - name: Apply Certificate
+      ansible.builtin.command:
+        cmd: kubectl apply -f /tmp/easydns-certificate.yaml
+      changed_when: true
+
+    # -----------------------------------------------------------------------
+    # Status
+    # -----------------------------------------------------------------------
+
+    - name: Check ClusterIssuer status
+      ansible.builtin.command:
+        cmd: kubectl get clusterissuer -o wide
+      changed_when: false
+      register: issuer_status
+
+    - name: Show ClusterIssuer status
+      ansible.builtin.debug:
+        msg: "{{ issuer_status.stdout_lines }}"

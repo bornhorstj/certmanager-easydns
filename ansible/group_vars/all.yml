@@ -1,0 +1,8 @@
+# Default variables for all playbooks.
+# Override sensitive values in secrets.yml (gitignored) or with -e on the command line.
+
+cert_manager_namespace: cert-manager
+webhook_image_tag: latest
+webhook_group_name: acme.easydns.com
+webhook_solver_name: easydns
+cert_namespace: default
