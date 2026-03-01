@@ -28,7 +28,7 @@ spec:
   ports:
     - name: https
       port: 443         # The port clients (cert-manager) connect to
-      targetPort: 443   # The port our webhook pod listens on
+      targetPort: 8443  # The port our webhook pod listens on (non-root can't bind 443)
       protocol: TCP
   selector:
     # Routes traffic to pods that match these labels (our webhook pods)

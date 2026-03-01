@@ -60,6 +60,46 @@ subjects:
     namespace: {{ .Release.Namespace }}
 
 ---
+# ── ClusterRoleBinding: API aggregation auth delegation ──────────────────────
+# Required by the Kubernetes API aggregation layer so the webhook can validate
+# request authentication. Without this, the webhook can't read
+# extension-apiserver-authentication in kube-system and crashes on startup.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "cert-manager-webhook-easydns.fullname" . }}:auth-delegator
+  labels:
+    {{- include "cert-manager-webhook-easydns.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:auth-delegator
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: {{ include "cert-manager-webhook-easydns.fullname" . }}
+    namespace: {{ .Release.Namespace }}
+
+---
+# ── RoleBinding: read extension-apiserver-authentication configmap ────────────
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "cert-manager-webhook-easydns.fullname" . }}:webhook-authentication-reader
+  namespace: kube-system
+  labels:
+    {{- include "cert-manager-webhook-easydns.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: extension-apiserver-authentication-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: {{ include "cert-manager-webhook-easydns.fullname" . }}
+    namespace: {{ .Release.Namespace }}
+
+---
 # ── ClusterRole: cert-manager webhook framework permissions ──────────────────
 # cert-manager's webhook framework needs to verify our webhook's identity.
 # This grants the permissions required by the webhook SDK.

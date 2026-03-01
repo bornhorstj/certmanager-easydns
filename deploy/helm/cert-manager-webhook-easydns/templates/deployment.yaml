@@ -40,12 +40,12 @@ spec:
             # Tell the webhook what port to listen on
             - --tls-cert-file=/tls/tls.crt
             - --tls-private-key-file=/tls/tls.key
-            # Secure port — cert-manager talks to us over HTTPS
-            - --secure-port=443
+            # Use 8443 so the non-root container can bind without NET_BIND_SERVICE
+            - --secure-port=8443
 
           ports:
             - name: https
-              containerPort: 443
+              containerPort: 8443
               protocol: TCP
 
           # Health checks — Kubernetes uses these to know if the pod is healthy.
@@ -54,7 +54,7 @@ spec:
             httpGet:
               scheme: HTTPS
               path: /healthz
-              port: 443
+              port: 8443
             initialDelaySeconds: 5
             periodSeconds: 10
 
@@ -62,7 +62,7 @@ spec:
             httpGet:
               scheme: HTTPS
               path: /healthz
-              port: 443
+              port: 8443
             initialDelaySeconds: 5
             periodSeconds: 5
 
