@@ -26,9 +26,9 @@ RUN apk add --no-cache git
 # Set our working directory inside the build container
 WORKDIR /build
 
-# Copy dependency files first — Docker caches these layers.
+# Copy dependency file first — Docker caches this layer.
 # If only main.go changes, Docker reuses the cached dependency download.
-COPY go.mod go.sum ./
+COPY go.mod ./
 
 # Download all Go dependencies
 RUN go mod download
@@ -42,6 +42,7 @@ COPY . .
 # -o webhook    : Name the output binary "webhook"
 # -ldflags '-w -s' : Strip debug symbols to make the binary smaller
 RUN CGO_ENABLED=0 GOOS=linux go build \
+    -mod=mod \
     -ldflags='-w -s' \
     -o webhook \
     .

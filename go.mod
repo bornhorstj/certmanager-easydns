@@ -1,8 +1,4 @@
-module github.com/youorg/cert-manager-webhook-easydns
-
-// Update "youorg" to your GitHub org/username before publishing.
-// This module path is used for Go imports — it doesn't need to be a real URL
-// during development, but should match your actual repo when you publish.
+module github.com/bornhorstj/certmanager-easydns
 
 go 1.21
 

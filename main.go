@@ -32,6 +32,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -287,6 +288,7 @@ func (s *easyDNSSolver) getCredentials(cfg *easyDNSConfig, defaultNamespace stri
 
 	// Fetch the Secret containing the API token
 	tokenSecret, err := s.k8sClient.CoreV1().Secrets(tokenNS).Get(
+		context.Background(),
 		cfg.APITokenSecretRef.Name,
 		metav1.GetOptions{},
 	)
@@ -297,6 +299,7 @@ func (s *easyDNSSolver) getCredentials(cfg *easyDNSConfig, defaultNamespace stri
 
 	// Fetch the Secret containing the API key
 	keySecret, err := s.k8sClient.CoreV1().Secrets(keyNS).Get(
+		context.Background(),
 		cfg.APIKeySecretRef.Name,
 		metav1.GetOptions{},
 	)
