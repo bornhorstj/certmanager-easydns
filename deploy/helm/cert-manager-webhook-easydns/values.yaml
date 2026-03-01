@@ -22,9 +22,9 @@ solverName: easydns           # Short name referenced in the ClusterIssuer solve
 # ── Container Image ───────────────────────────────────────────────────────────
 # Where to pull the webhook container image from.
 image:
-  repository: your-registry/cert-manager-webhook-easydns  # REQUIRED: Update to your image registry
+  repository: ghcr.io/bornhorstj/certmanager-easydns
   tag: latest                                               # Pin to a specific version in production (e.g., "1.0.0")
-  pullPolicy: IfNotPresent                                  # Only pull if not already cached locally
+  pullPolicy: Always                                        # Always pull so 'latest' stays current
 
 
 # ── Kubernetes Resources ──────────────────────────────────────────────────────

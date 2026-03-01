@@ -7,6 +7,13 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/certmanager-easydns
+
 jobs:
   build:
     runs-on: [self-hosted, linux, proxmox]
@@ -44,11 +51,17 @@ jobs:
             echo "tag=latest" >> $GITHUB_OUTPUT
           fi
 
+      - name: Log in to GitHub Container Registry
+        if: github.event_name != 'pull_request'
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
       - name: Build Docker image
-        run: |
-          docker build -t cert-manager-webhook-easydns:${{ steps.tag.outputs.tag }} .
+        run: docker build -t ${{ env.IMAGE }}:${{ steps.tag.outputs.tag }} .
+
+      - name: Push Docker image
+        if: github.event_name != 'pull_request'
+        run: docker push ${{ env.IMAGE }}:${{ steps.tag.outputs.tag }}
 
       - name: Clean up local image
         if: always()
-        run: |
-          docker rmi cert-manager-webhook-easydns:${{ steps.tag.outputs.tag }} || true
+        run: docker rmi ${{ env.IMAGE }}:${{ steps.tag.outputs.tag }} || true
