@@ -1,0 +1,71 @@
+name: Build and Push
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+
+env:
+  IMAGE_NAME: ${{ secrets.REGISTRY_IMAGE }}
+
+jobs:
+  build:
+    runs-on: [self-hosted, linux, proxmox]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        run: |
+          export PATH=$PATH:/usr/local/go/bin
+          go version
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: ${{ runner.os }}-go-${{ hashFiles('go.mod') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Build Go binary
+        run: |
+          export PATH=$PATH:/usr/local/go/bin
+          CGO_ENABLED=0 GOOS=linux go build -mod=mod -ldflags='-w -s' -o webhook .
+
+      - name: Verify binary
+        run: |
+          file webhook
+          ls -lh webhook
+
+      - name: Set image tag
+        id: tag
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=latest" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Log in to registry
+        if: github.event_name != 'pull_request'
+        run: echo "${{ secrets.REGISTRY_PASSWORD }}" | docker login ${{ secrets.REGISTRY_HOST }} -u ${{ secrets.REGISTRY_USERNAME }} --password-stdin
+
+      - name: Build Docker image
+        run: |
+          docker build -t ${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.tag }} .
+
+      - name: Push Docker image
+        if: github.event_name != 'pull_request'
+        run: |
+          docker push ${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.tag }}
+
+      - name: Clean up local image
+        if: always()
+        run: |
+          docker rmi ${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.tag }} || true
