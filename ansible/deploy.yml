@@ -52,6 +52,30 @@
       changed_when: false
 
     # -----------------------------------------------------------------------
+    # ghcr.io imagePullSecret
+    # Allows the cluster to pull the webhook image from the private registry.
+    # -----------------------------------------------------------------------
+
+    - name: Create ghcr.io imagePullSecret
+      ansible.builtin.command:
+        cmd: >-
+          kubectl create secret docker-registry ghcr-credentials
+          --namespace {{ cert_manager_namespace }}
+          --docker-server=ghcr.io
+          --docker-username={{ lookup('env', 'USER') }}
+          --docker-password={{ ghcr_pull_token }}
+          --dry-run=client -o yaml
+      register: ghcr_secret_yaml
+      changed_when: false
+      no_log: true
+
+    - name: Apply ghcr.io imagePullSecret
+      ansible.builtin.shell:
+        cmd: "kubectl apply -f - <<'EOF'\n{{ ghcr_secret_yaml.stdout }}\nEOF"
+      changed_when: true
+      no_log: true
+
+    # -----------------------------------------------------------------------
     # EasyDNS webhook — deployed from local Helm chart
     # -----------------------------------------------------------------------
 

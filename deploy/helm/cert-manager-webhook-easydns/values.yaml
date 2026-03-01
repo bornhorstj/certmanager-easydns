@@ -26,6 +26,11 @@ image:
   tag: latest                                               # Pin to a specific version in production (e.g., "1.0.0")
   pullPolicy: Always                                        # Always pull so 'latest' stays current
 
+# imagePullSecrets is required when pulling from a private ghcr.io registry.
+# The secret is created by the Ansible deploy playbook.
+imagePullSecrets:
+  - name: ghcr-credentials
+
 
 # ── Kubernetes Resources ──────────────────────────────────────────────────────
 # How many webhook pods to run. 1 is fine for most setups.

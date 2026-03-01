@@ -26,6 +26,11 @@ spec:
       # This controls what Kubernetes API permissions the webhook has.
       serviceAccountName: {{ include "cert-manager-webhook-easydns.fullname" . }}
 
+      {{- if .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml .Values.imagePullSecrets | nindent 8 }}
+      {{- end }}
+
       containers:
         - name: webhook
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
