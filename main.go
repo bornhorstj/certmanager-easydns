@@ -80,6 +80,12 @@ type easyDNSConfig struct {
 	// Production: https://rest.easydns.net
 	APIEndpoint string `json:"apiEndpoint"`
 
+	// Zone overrides the DNS zone used in EasyDNS API calls.
+	// Use this when the zone cert-manager resolves (e.g. "8bit.dark-byte.io")
+	// does not match the zone EasyDNS manages (e.g. "dark-byte.io").
+	// If empty, ch.ResolvedZone is used.
+	Zone string `json:"zone"`
+
 	// APITokenSecretRef points to the Kubernetes Secret holding the API token.
 	APITokenSecretRef secretKeySelector `json:"apiTokenSecretRef"`
 
@@ -161,10 +167,13 @@ func (s *easyDNSSolver) Present(ch *v1alpha1.ChallengeRequest) error {
 	}
 
 	// Step 3: Figure out which zone and hostname to use
-	// ch.ResolvedFQDN might be "_acme-challenge.mysite.com."
-	// ch.ResolvedZone might be "mysite.com."
-	// We need to strip the zone from the FQDN to get just the host part.
+	// ch.ResolvedFQDN might be "_acme-challenge.k8s.8bit.dark-byte.io."
+	// ch.ResolvedZone might be "8bit.dark-byte.io." but EasyDNS may manage
+	// the parent zone "dark-byte.io" — use cfg.Zone to override if needed.
 	zone := strings.TrimSuffix(ch.ResolvedZone, ".")
+	if cfg.Zone != "" {
+		zone = cfg.Zone
+	}
 	fqdn := strings.TrimSuffix(ch.ResolvedFQDN, ".")
 	host := strings.TrimSuffix(fqdn, "."+zone)
 
@@ -209,6 +218,9 @@ func (s *easyDNSSolver) CleanUp(ch *v1alpha1.ChallengeRequest) error {
 	}
 
 	zone := strings.TrimSuffix(ch.ResolvedZone, ".")
+	if cfg.Zone != "" {
+		zone = cfg.Zone
+	}
 	fqdn := strings.TrimSuffix(ch.ResolvedFQDN, ".")
 	host := strings.TrimSuffix(fqdn, "."+zone)
 
