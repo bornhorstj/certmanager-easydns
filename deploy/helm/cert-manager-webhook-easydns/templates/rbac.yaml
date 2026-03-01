@@ -111,7 +111,7 @@ metadata:
     {{- include "cert-manager-webhook-easydns.labels" . | nindent 4 }}
 rules:
   - apiGroups:
-      - acme.cert-manager.io
+      - {{ .Values.groupName }}
     resources:
       - "*"
     verbs:
