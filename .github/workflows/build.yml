@@ -7,9 +7,6 @@ on:
   pull_request:
     branches: [main]
 
-env:
-  IMAGE_NAME: ${{ secrets.REGISTRY_IMAGE }}
-
 jobs:
   build:
     runs-on: [self-hosted, linux, proxmox]
@@ -17,11 +14,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Set up Go
-        run: |
-          export PATH=$PATH:/usr/local/go/bin
-          go version
 
       - name: Cache Go modules
         uses: actions/cache@v4
@@ -52,20 +44,11 @@ jobs:
             echo "tag=latest" >> $GITHUB_OUTPUT
           fi
 
-      - name: Log in to registry
-        if: github.event_name != 'pull_request'
-        run: echo "${{ secrets.REGISTRY_PASSWORD }}" | docker login ${{ secrets.REGISTRY_HOST }} -u ${{ secrets.REGISTRY_USERNAME }} --password-stdin
-
       - name: Build Docker image
         run: |
-          docker build -t ${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.tag }} .
-
-      - name: Push Docker image
-        if: github.event_name != 'pull_request'
-        run: |
-          docker push ${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.tag }}
+          docker build -t cert-manager-webhook-easydns:${{ steps.tag.outputs.tag }} .
 
       - name: Clean up local image
         if: always()
         run: |
-          docker rmi ${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.tag }} || true
+          docker rmi cert-manager-webhook-easydns:${{ steps.tag.outputs.tag }} || true
